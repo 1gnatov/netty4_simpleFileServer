@@ -13,5 +13,6 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Maven: io.netty:netty-all:4.0.29.Final" level="project" />
     <orderEntry type="library" name="Maven: tv.cntt:netty-router:2.0.0" level="project" />
+    <orderEntry type="library" name="io.netty:netty-codec-http:4.0.0.CR7" level="project" />
   </component>
 </module>

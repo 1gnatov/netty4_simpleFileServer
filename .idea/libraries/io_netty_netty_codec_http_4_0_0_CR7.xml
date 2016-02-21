@@ -1,0 +1,19 @@
+<component name="libraryTable">
+  <library name="io.netty:netty-codec-http:4.0.0.CR7" type="repository">
+    <properties maven-id="io.netty:netty-codec-http:4.0.0.CR7" />
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-codec-http/4.0.0.CR7/netty-codec-http-4.0.0.CR7.jar!/" />
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-codec/4.0.0.CR7/netty-codec-4.0.0.CR7.jar!/" />
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-transport/4.0.0.CR7/netty-transport-4.0.0.CR7.jar!/" />
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-buffer/4.0.0.CR7/netty-buffer-4.0.0.CR7.jar!/" />
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-common/4.0.0.CR7/netty-common-4.0.0.CR7.jar!/" />
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-handler/4.0.0.CR7/netty-handler-4.0.0.CR7.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-codec-http/4.0.0.CR7/netty-codec-http-4.0.0.CR7-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/io/netty/netty-codec-http/4.0.0.CR7/netty-codec-http-4.0.0.CR7-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

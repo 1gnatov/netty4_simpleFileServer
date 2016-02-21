@@ -15,21 +15,15 @@
  */
 
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandler;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponse;
-import io.netty.handler.codec.http.HttpResponseStatus;
-import io.netty.handler.codec.http.HttpVersion;
+import io.netty.channel.*;
+import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.router.RouteResult;
 import io.netty.handler.codec.http.router.Router;
 import io.netty.util.CharsetUtil;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 
 @ChannelHandler.Sharable
 public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
@@ -46,8 +40,31 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
             return;
         }
 
-        HttpResponse res = createResponse(req, router);
+        HttpResponse res = customResponse(req, router);
+        //HttpResponse res = createResponse(req, router);
         flushResponse(ctx, req, res);
+    }
+
+    private static HttpResponse customResponse(HttpRequest req, Router<String> router) {
+        RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
+
+        String content = null;
+        try {
+            content = new String(Files.readAllBytes(Paths.get("index.html")));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+                Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
+        );
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
     }
 
     private static HttpResponse createResponse(HttpRequest req, Router<String> router) {
