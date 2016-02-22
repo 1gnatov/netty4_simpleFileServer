@@ -45,15 +45,43 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 //        HttpResponse res = customResponse(req, router);
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
+        Map<String, String> paramMap1 = null;
+        String paramFirst1 = null;
+        if (routeResult.pathParams().isEmpty()) {
+            paramMap1 = null;
+        } else {
+            paramMap1 = (Map<String, String>) routeResult.pathParams();
+            paramFirst1 = paramMap1.get("id");
+        }
+
+
+        //check if we want to give back an image
+
 
         if (routeResult.target() == "base64") {
-            HttpResponse res = base64Response(req, router);
+            HttpResponse res = base64Response(req, router, "public/encodedImage.txt");
+            flushResponse(ctx, req, res);
+        }
+
+        if (routeResult.target() == "image") {
+            HttpResponse res = imgResponse(req, router, "public/encodedImage.txt");
             flushResponse(ctx, req, res);
         }
 
         if (routeResult.target() == "Custom HTML page") {
+            System.out.println("In custom html router");
+            System.out.println(paramFirst1);
+//            if (getExtention(paramFirst1) == "jpg") {
+//                System.out.println("jpg param");
+//                HttpResponse res1 = base64Response(req, router, "public/encodedImage.txt");
+//                flushResponse(ctx, req, res1);
+//            }
+
             HttpResponse res = customResponse(req, router);
             flushResponse(ctx, req, res);
+
+
+
         } else {
             HttpResponse res = createResponse(req, router);
             flushResponse(ctx, req, res);
@@ -61,12 +89,13 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         //flushResponse(ctx, req, res);
     }
 
-    private static HttpResponse base64Response(HttpRequest req, Router<String> router) {
+    private static HttpResponse base64Response(HttpRequest req, Router<String> router, String pathString) {
+
 
         StringBuilder content = new StringBuilder();
         content.append("<!DOCTYPE html><html><head><title></title></head><body style=\"margin:0; padding: 0\"><img src=\"data:image/jpg;base64,");
         try {
-            content.append(new String(Files.readAllBytes(Paths.get("public/encodedImage.txt"))));
+            content.append(new String(Files.readAllBytes(Paths.get(pathString))));
 
         } catch (IOException e) {
             e.printStackTrace();
@@ -85,6 +114,37 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         return res;
 
     }
+
+
+    private static HttpResponse imgResponse(HttpRequest req, Router<String> router, String pathString) {
+
+        RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
+        System.out.println("IN IMG RESPONSE");
+        pathString = "public/image.jpg";
+
+        byte[] content = null;
+        try {
+             content = Files.readAllBytes(Paths.get(pathString));
+            //content = new String(Files.readAllBytes(Paths.get("index.html")));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+                Unpooled.copiedBuffer(content)
+        );
+
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "image/jpg");
+//        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+    }
+
 
     private static HttpResponse customResponse(HttpRequest req, Router<String> router) {
 
@@ -163,5 +223,10 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
             res.headers().set(HttpHeaders.Names.CONNECTION, HttpHeaders.Values.KEEP_ALIVE);
             return ctx.writeAndFlush(res);
         }
+    }
+
+    public String getExtention (String s) {
+        String[] extension = s.split("\\.");
+        return extension[extension.length];
     }
 }

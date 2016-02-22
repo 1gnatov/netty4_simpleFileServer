@@ -36,6 +36,7 @@ public class HttpRouterServer {
             .GET("/articles/:id", "Article show page")
             .GET("/public/:id", "Custom HTML page")
             .GET("/image", "base64")
+            .GET("/img", "image")
             .notFound("404 Not Found");
         System.out.println(router);
 
