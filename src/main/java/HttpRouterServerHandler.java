@@ -20,10 +20,12 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.router.RouteResult;
 import io.netty.handler.codec.http.router.Router;
 import io.netty.util.CharsetUtil;
+import jdk.nashorn.internal.ir.annotations.Ignore;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.Map;
 
 @ChannelHandler.Sharable
 public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
@@ -33,27 +35,43 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         this.router = router;
     }
 
-    @Override
+    @Override @Ignore
     public void channelRead0(ChannelHandlerContext ctx, HttpRequest req) {
-        if (HttpHeaders.is100ContinueExpected(req)) {
-            ctx.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.CONTINUE));
-            return;
-        }
+//        if (HttpHeaders.is100ContinueExpected(req)) {
+//            ctx.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.CONTINUE));
+//            return;
+//        }
 
-        HttpResponse res = customResponse(req, router);
-        //HttpResponse res = createResponse(req, router);
-        flushResponse(ctx, req, res);
-    }
+//        HttpResponse res = customResponse(req, router);
 
-    private static HttpResponse customResponse(HttpRequest req, Router<String> router) {
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
 
-        String content = null;
+        if (routeResult.target() == "base64") {
+            HttpResponse res = base64Response(req, router);
+            flushResponse(ctx, req, res);
+        }
+
+        if (routeResult.target() == "Custom HTML page") {
+            HttpResponse res = customResponse(req, router);
+            flushResponse(ctx, req, res);
+        } else {
+            HttpResponse res = createResponse(req, router);
+            flushResponse(ctx, req, res);
+        }
+        //flushResponse(ctx, req, res);
+    }
+
+    private static HttpResponse base64Response(HttpRequest req, Router<String> router) {
+
+        StringBuilder content = new StringBuilder();
+        content.append("<!DOCTYPE html><html><head><title></title></head><body style=\"margin:0; padding: 0\"><img src=\"data:image/jpg;base64,");
         try {
-            content = new String(Files.readAllBytes(Paths.get("index.html")));
+            content.append(new String(Files.readAllBytes(Paths.get("public/encodedImage.txt"))));
+
         } catch (IOException e) {
             e.printStackTrace();
         }
+        content.append("\"></body></html>");
 
 
         FullHttpResponse res = new DefaultFullHttpResponse(
@@ -65,7 +83,50 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
 
         return res;
+
     }
+
+    private static HttpResponse customResponse(HttpRequest req, Router<String> router) {
+
+        RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
+        StringBuilder targetFile = new StringBuilder();
+        targetFile.append("public/");
+
+        if (routeResult.pathParams().isEmpty()) {
+            targetFile.append("index.html");
+        } else {
+            Map<String, String> paramMap = (Map<String, String>) routeResult.pathParams();
+            String paramFirst = paramMap.get("id");
+            targetFile.append(paramFirst);
+        }
+        System.out.println(targetFile);
+
+
+
+        String content = null;
+        try {
+            content = new String(Files.readAllBytes(Paths.get(targetFile.toString())));
+            //content = new String(Files.readAllBytes(Paths.get("index.html")));
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+
+
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+                Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
+        );
+
+
+//        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "image/png");
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+    }
+
+
 
     private static HttpResponse createResponse(HttpRequest req, Router<String> router) {
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());

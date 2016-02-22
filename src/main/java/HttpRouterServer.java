@@ -34,6 +34,8 @@ public class HttpRouterServer {
         Router<String> router = new Router<String>()
             .GET("/",             "Index page")
             .GET("/articles/:id", "Article show page")
+            .GET("/public/:id", "Custom HTML page")
+            .GET("/image", "base64")
             .notFound("404 Not Found");
         System.out.println(router);
 
