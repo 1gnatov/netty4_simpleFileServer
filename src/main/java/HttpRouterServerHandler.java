@@ -20,116 +20,158 @@ import io.netty.handler.codec.http.*;
 import io.netty.handler.codec.http.router.RouteResult;
 import io.netty.handler.codec.http.router.Router;
 import io.netty.util.CharsetUtil;
-import jdk.nashorn.internal.ir.annotations.Ignore;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Paths;
 import java.util.Map;
 
+
 @ChannelHandler.Sharable
 public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
+
+    public static final String PUBLIC_DIR = "public/";
     private final Router<String> router;
 
     public HttpRouterServerHandler(Router<String> router) {
         this.router = router;
     }
 
-    @Override @Ignore
+    @Override
     public void channelRead0(ChannelHandlerContext ctx, HttpRequest req) {
-//        if (HttpHeaders.is100ContinueExpected(req)) {
-//            ctx.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.CONTINUE));
-//            return;
-//        }
-
-//        HttpResponse res = customResponse(req, router);
+        //        if (HttpHeaders.is100ContinueExpected(req)) {
+        //            ctx.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.CONTINUE));
+        //            return;
+        //        }
+        //        HttpResponse res = htmlResponse(req, router);
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
-        Map<String, String> paramMap1 = null;
-        String paramFirst1 = null;
+        Map<String, String> paramMap = null;
+        String paramFirst = null;
         if (routeResult.pathParams().isEmpty()) {
-            paramMap1 = null;
+            paramMap = null;
         } else {
-            paramMap1 = (Map<String, String>) routeResult.pathParams();
-            paramFirst1 = paramMap1.get("id");
+            paramMap = (Map<String, String>) routeResult.pathParams();
+            paramFirst = paramMap.get("id");
         }
 
-
-        //check if we want to give back an image
-
-
-        if (routeResult.target() == "base64") {
-            HttpResponse res = base64Response(req, router, "public/encodedImage.txt");
+//        TODO any querryParams -> 400 Check query params
+        if (!routeResult.queryParams().isEmpty()) {
+            invalidQueryParams();
+            HttpResponse res = invalidQueryParams();
             flushResponse(ctx, req, res);
         }
 
-        if (routeResult.target() == "image") {
-            HttpResponse res = imgResponse(req, router, "public/encodedImage.txt");
-            flushResponse(ctx, req, res);
-        }
 
         if (routeResult.target() == "Custom HTML page") {
-            System.out.println("In custom html router");
-            System.out.println(paramFirst1);
-//            if (getExtention(paramFirst1) == "jpg") {
-//                System.out.println("jpg param");
-//                HttpResponse res1 = base64Response(req, router, "public/encodedImage.txt");
-//                flushResponse(ctx, req, res1);
-//            }
 
-            HttpResponse res = customResponse(req, router);
+            // public/*.jpg *.png
+            if (getExtension(paramFirst).equals("jpg") || getExtension(paramFirst).equals("png")) {
+                StringBuilder path = new StringBuilder();
+                path.append(PUBLIC_DIR);
+                path.append(paramFirst);
+                HttpResponse res1 = imgResponse(req, router, path.toString());
+                flushResponse(ctx, req, res1);
+            }
+
+            //public/*.js
+            if (getExtension(paramFirst).equals("js")) {
+                StringBuilder path = new StringBuilder();
+                path.append(PUBLIC_DIR);
+                path.append(paramFirst);
+                HttpResponse res1 = jsResponse(req, router, path.toString());
+                flushResponse(ctx, req, res1);
+            }
+
+            //public/*.css
+            if (getExtension(paramFirst).equals("css")) {
+                StringBuilder path = new StringBuilder();
+                path.append(PUBLIC_DIR);
+                path.append(paramFirst);
+                HttpResponse res1 = cssResponse(req, router, path.toString());
+                flushResponse(ctx, req, res1);
+            }
+
+            // public/*.*
+            HttpResponse res = htmlResponse(req, router);
             flushResponse(ctx, req, res);
 
 
-
-        } else {
-            HttpResponse res = createResponse(req, router);
-            flushResponse(ctx, req, res);
+        } else { // != "Custom HTML page"
+          HttpResponse res = createResponse(req, router);
+//          HttpResponse res = blankResponse();
+          flushResponse(ctx, req, res);
         }
-        //flushResponse(ctx, req, res);
+
+//        if (routeResult.target() == "base64") {
+//            HttpResponse res = base64Response(req, router, "public/encodedImage.txt");
+//            flushResponse(ctx, req, res);
+//        }
+//        if (routeResult.target() == "image") {
+//            HttpResponse res = imgResponse(req, router, "public/encodedImage.txt");
+//            flushResponse(ctx, req, res);
+//        }
     }
 
-    private static HttpResponse base64Response(HttpRequest req, Router<String> router, String pathString) {
+    private static HttpResponse cssResponse(HttpRequest req, Router<String> router, String pathString) {
 
-
-        StringBuilder content = new StringBuilder();
-        content.append("<!DOCTYPE html><html><head><title></title></head><body style=\"margin:0; padding: 0\"><img src=\"data:image/jpg;base64,");
+        String content = null;
         try {
-            content.append(new String(Files.readAllBytes(Paths.get(pathString))));
-
+            content = new String(Files.readAllBytes(Paths.get(pathString)));
+        } catch (NoSuchFileException e) {
+            return FileNotFound();
         } catch (IOException e) {
             e.printStackTrace();
         }
-        content.append("\"></body></html>");
-
 
         FullHttpResponse res = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
                 Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
         );
 
-        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/css");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
 
         return res;
-
     }
 
+    private static HttpResponse jsResponse(HttpRequest req, Router<String> router, String pathString) {
 
-    private static HttpResponse imgResponse(HttpRequest req, Router<String> router, String pathString) {
-
-        RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
-        System.out.println("IN IMG RESPONSE");
-        pathString = "public/image.jpg";
-
-        byte[] content = null;
+        String content = null;
         try {
-             content = Files.readAllBytes(Paths.get(pathString));
-            //content = new String(Files.readAllBytes(Paths.get("index.html")));
+            content = new String(Files.readAllBytes(Paths.get(pathString)));
+        } catch (NoSuchFileException e) {
+            return FileNotFound();
         } catch (IOException e) {
             e.printStackTrace();
         }
 
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+                Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
+        );
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "application/js");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+
+
+    }
+
+    private static HttpResponse imgResponse(HttpRequest req, Router<String> router, String pathString) {
+
+        RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
+
+        byte[] content = null;
+        try {
+             content = Files.readAllBytes(Paths.get(pathString));
+        } catch (NoSuchFileException e) {
+            return FileNotFound();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
 
         FullHttpResponse res = new DefaultFullHttpResponse(
@@ -137,20 +179,17 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
                 Unpooled.copiedBuffer(content)
         );
 
-
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "image/jpg");
-//        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
 
         return res;
     }
 
-
-    private static HttpResponse customResponse(HttpRequest req, Router<String> router) {
+    private static HttpResponse htmlResponse(HttpRequest req, Router<String> router) {
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
         StringBuilder targetFile = new StringBuilder();
-        targetFile.append("public/");
+        targetFile.append(PUBLIC_DIR);
 
         if (routeResult.pathParams().isEmpty()) {
             targetFile.append("index.html");
@@ -159,34 +198,68 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
             String paramFirst = paramMap.get("id");
             targetFile.append(paramFirst);
         }
-        System.out.println(targetFile);
-
 
 
         String content = null;
         try {
             content = new String(Files.readAllBytes(Paths.get(targetFile.toString())));
-            //content = new String(Files.readAllBytes(Paths.get("index.html")));
+        } catch (NoSuchFileException e) {
+            return FileNotFound();
         } catch (IOException e) {
             e.printStackTrace();
         }
 
 
+        boolean isCharsetUSASCII = req.headers().contains("Accept-Charset", "US-ASCII", true);
+
 
         FullHttpResponse res = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
-                Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
+                Unpooled.copiedBuffer(content.toString(), isCharsetUSASCII? CharsetUtil.US_ASCII : CharsetUtil.UTF_8)
         );
 
 
-//        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "image/png");
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
 
         return res;
     }
 
+    private static HttpResponse blankResponse() {
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND,
+                Unpooled.copiedBuffer("<html><body><a href='public/index.html'>index.html</a></body></html>", CharsetUtil.UTF_8)
+        );
 
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+    }
+
+    private static HttpResponse FileNotFound() {
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND,
+                Unpooled.copiedBuffer("404 File not Found", CharsetUtil.UTF_8)
+        );
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/plain");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+    }
+
+    private static HttpResponse invalidQueryParams() {
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.BAD_REQUEST,
+                Unpooled.copiedBuffer("400 Bad request", CharsetUtil.UTF_8)
+        );
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/plain");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+    }
 
     private static HttpResponse createResponse(HttpRequest req, Router<String> router) {
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
@@ -216,6 +289,32 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         return res;
     }
 
+    private static HttpResponse base64Response(HttpRequest req, Router<String> router, String pathString) {
+
+
+        StringBuilder content = new StringBuilder();
+        content.append("<!DOCTYPE html><html><head><title></title></head><body style=\"margin:0; padding: 0\"><img src=\"data:image/jpg;base64,");
+        try {
+            content.append(new String(Files.readAllBytes(Paths.get(pathString))));
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        content.append("\"></body></html>");
+
+
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
+                Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
+        );
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+
+    }
+
     private static ChannelFuture flushResponse(ChannelHandlerContext ctx, HttpRequest req, HttpResponse res) {
         if (!HttpHeaders.isKeepAlive(req)) {
             return ctx.writeAndFlush(res).addListener(ChannelFutureListener.CLOSE);
@@ -225,8 +324,10 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         }
     }
 
-    public String getExtention (String s) {
-        String[] extension = s.split("\\.");
-        return extension[extension.length];
+    public String getExtension(String s) {
+        if (s.contains(".")) {
+            return s.split("\\.")[1];
+        } else return "";
+
     }
 }

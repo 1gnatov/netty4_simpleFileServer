@@ -21,8 +21,11 @@ import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.handler.codec.http.router.Router;
 
+
 public class HttpRouterServer {
     public static final int PORT = 8000;
+    // ALSO CHANGE PUBLIC_DIR IN ServerHandler!
+    public static final String PUBLIC_DIR = "public/";
 
     public static void main(String[] args) throws Exception {
         // This is an example router, it will be used at HttpRouterServerHandler.
@@ -34,9 +37,11 @@ public class HttpRouterServer {
         Router<String> router = new Router<String>()
             .GET("/",             "Index page")
             .GET("/articles/:id", "Article show page")
-            .GET("/public/:id", "Custom HTML page")
-            .GET("/image", "base64")
-            .GET("/img", "image")
+            .GET(PUBLIC_DIR+":id", "Custom HTML page")
+//            .GET("/", "index")
+//            .GET(PUBLIC_DIR, "index")
+//            .GET("/image", "base64")
+//            .GET("/img", "image")
             .notFound("404 Not Found");
         System.out.println(router);
 
