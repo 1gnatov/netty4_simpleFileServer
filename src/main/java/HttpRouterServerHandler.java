@@ -40,11 +40,12 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
     @Override
     public void channelRead0(ChannelHandlerContext ctx, HttpRequest req) {
-        //        if (HttpHeaders.is100ContinueExpected(req)) {
-        //            ctx.writeAndFlush(new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.CONTINUE));
-        //            return;
-        //        }
-        //        HttpResponse res = htmlResponse(req, router);
+
+        // 405 if request is not GET
+        if (req.getMethod() != HttpMethod.GET) {
+            HttpResponse res = HttpMethodIsNotGet();
+            flushResponse(ctx, req, res);
+        }
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
         Map<String, String> paramMap = null;
@@ -56,9 +57,8 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
             paramFirst = paramMap.get("id");
         }
 
-//        TODO any querryParams -> 400 Check query params
+        // 400 if any query params
         if (!routeResult.queryParams().isEmpty()) {
-            invalidQueryParams();
             HttpResponse res = invalidQueryParams();
             flushResponse(ctx, req, res);
         }
@@ -99,8 +99,8 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
 
         } else { // != "Custom HTML page"
-          HttpResponse res = createResponse(req, router);
-//          HttpResponse res = blankResponse();
+//          HttpResponse res = createResponse(req, router);
+          HttpResponse res = blankResponse();
           flushResponse(ctx, req, res);
         }
 
@@ -227,11 +227,23 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
     private static HttpResponse blankResponse() {
         FullHttpResponse res = new DefaultFullHttpResponse(
-                HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND,
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
                 Unpooled.copiedBuffer("<html><body><a href='public/index.html'>index.html</a></body></html>", CharsetUtil.UTF_8)
         );
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
+        res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
+        return res;
+    }
+
+    private static HttpResponse HttpMethodIsNotGet() {
+        FullHttpResponse res = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.METHOD_NOT_ALLOWED,
+                Unpooled.copiedBuffer("405 Request method is not GET", CharsetUtil.UTF_8)
+        );
+
+        res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/plain");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
 
         return res;

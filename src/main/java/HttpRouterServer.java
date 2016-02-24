@@ -24,7 +24,7 @@ import io.netty.handler.codec.http.router.Router;
 
 public class HttpRouterServer {
     public static final int PORT = 8000;
-    // ALSO CHANGE PUBLIC_DIR IN ServerHandler!
+    // ALSO CHANGE PUBLIC_DIR IN HttpRouterServerHandler!
     public static final String PUBLIC_DIR = "public/";
 
     public static void main(String[] args) throws Exception {
@@ -35,11 +35,11 @@ public class HttpRouterServer {
         // get a target class, you can create an instance of it and dispatch the
         // request to the instance etc.
         Router<String> router = new Router<String>()
-            .GET("/",             "Index page")
-            .GET("/articles/:id", "Article show page")
+//            .GET("/",             "Index page")
+//            .GET("/articles/:id", "Article show page")
             .GET(PUBLIC_DIR+":id", "Custom HTML page")
-//            .GET("/", "index")
-//            .GET(PUBLIC_DIR, "index")
+            .GET("/", "index")
+            .GET(PUBLIC_DIR, "index")
 //            .GET("/image", "base64")
 //            .GET("/img", "image")
             .notFound("404 Not Found");
