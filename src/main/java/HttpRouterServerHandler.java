@@ -25,6 +25,8 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Paths;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.Map;
 
 
@@ -32,7 +34,14 @@ import java.util.Map;
 public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
     public static final String PUBLIC_DIR = "public/";
+    public static final boolean FILE_MEMORY_CACHING = true;
+    private static final long CACHE_EXPIRES_IN_MS = 60000L; //60sec
     private final Router<String> router;
+    //TODO here will be CacheMap<>
+
+    public HashMap<String, cachedStringFile> stringCache = new HashMap<String, cachedStringFile>();
+    public HashMap<String, cachedByteArray> byteCache = new HashMap<String, cachedByteArray>();
+
 
     public HttpRouterServerHandler(Router<String> router) {
         this.router = router;
@@ -63,6 +72,15 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
             flushResponse(ctx, req, res);
         }
 
+        //Caching in action! =)
+//        if (httpCash.containsKey(req.getUri())) {
+//            if (httpCash.get(req.getUri()).gotInCache > new Date().getTime() - CACHE_EXPIRES_IN_MS ) {
+//                HttpResponse res = httpCash.get(req.getUri()).response;
+//                flushResponse(ctx, req, res);
+//            } else { // cache got expired
+//                httpCash.remove(req.getUri());
+//            }
+//        }  else { // if (httpCash.containsKey(req.getUri()))
 
         if (routeResult.target() == "Custom HTML page") {
 
@@ -72,6 +90,7 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
                 path.append(PUBLIC_DIR);
                 path.append(paramFirst);
                 HttpResponse res1 = imgResponse(req, router, path.toString());
+                //httpCash.put(req.getUri(), new cachedReqResLastModTime(req.getUri(), res1, req, new Date().getTime()));
                 flushResponse(ctx, req, res1);
             }
 
@@ -81,6 +100,7 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
                 path.append(PUBLIC_DIR);
                 path.append(paramFirst);
                 HttpResponse res1 = jsResponse(req, router, path.toString());
+                //httpCash.put(req.getUri(), new cachedReqResLastModTime(req.getUri(), res1, req, new Date().getTime()));
                 flushResponse(ctx, req, res1);
             }
 
@@ -90,20 +110,23 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
                 path.append(PUBLIC_DIR);
                 path.append(paramFirst);
                 HttpResponse res1 = cssResponse(req, router, path.toString());
+                //httpCash.put(req.getUri(), new cachedReqResLastModTime(req.getUri(), res1, req, new Date().getTime()));
                 flushResponse(ctx, req, res1);
             }
 
             // public/*.*
             HttpResponse res = htmlResponse(req, router);
+            //httpCash.put(req.getUri(), new cachedReqResLastModTime(req.getUri(), res, req, new Date().getTime()));
             flushResponse(ctx, req, res);
 
 
         } else { // != "Custom HTML page"
-//          HttpResponse res = createResponse(req, router);
-          HttpResponse res = blankResponse();
-          flushResponse(ctx, req, res);
+            HttpResponse res = createResponse(req, router);
+//          HttpResponse res = blankResponse();
+            //httpCash.put(req.getUri(), new cachedReqResLastModTime(req.getUri(), res, req, new Date().getTime()));
+            flushResponse(ctx, req, res);
         }
-
+ //       }
 //        if (routeResult.target() == "base64") {
 //            HttpResponse res = base64Response(req, router, "public/encodedImage.txt");
 //            flushResponse(ctx, req, res);
@@ -114,15 +137,25 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 //        }
     }
 
-    private static HttpResponse cssResponse(HttpRequest req, Router<String> router, String pathString) {
+    private HttpResponse cssResponse(HttpRequest req, Router<String> router, String pathString) {
 
         String content = null;
-        try {
-            content = new String(Files.readAllBytes(Paths.get(pathString)));
-        } catch (NoSuchFileException e) {
-            return FileNotFound();
-        } catch (IOException e) {
-            e.printStackTrace();
+        //check cache
+        if (stringCache.containsKey(req.getUri()) && FILE_MEMORY_CACHING) {
+            if (stringCache.get(req.getUri()).gotInCache > new Date().getTime() - CACHE_EXPIRES_IN_MS) {
+                content = stringCache.get(req.getUri()).stringFile;
+            } else { // cache got expired
+                stringCache.remove(req.getUri());
+            }
+        } else {
+
+            try {
+                content = new String(Files.readAllBytes(Paths.get(pathString)));
+            } catch (NoSuchFileException e) {
+                return FileNotFound();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         FullHttpResponse res = new DefaultFullHttpResponse(
@@ -132,45 +165,70 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/css");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
-
+        //add to cache
+        if (FILE_MEMORY_CACHING) stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
         return res;
     }
 
-    private static HttpResponse jsResponse(HttpRequest req, Router<String> router, String pathString) {
+    private HttpResponse jsResponse(HttpRequest req, Router<String> router, String pathString) {
+
+        //c1 = Files.getLastModifiedTime()
 
         String content = null;
-        try {
-            content = new String(Files.readAllBytes(Paths.get(pathString)));
-        } catch (NoSuchFileException e) {
-            return FileNotFound();
-        } catch (IOException e) {
-            e.printStackTrace();
+
+        //check cache
+        if (stringCache.containsKey(req.getUri()) && FILE_MEMORY_CACHING) {
+            if (stringCache.get(req.getUri()).gotInCache > new Date().getTime() - CACHE_EXPIRES_IN_MS) {
+                content = stringCache.get(req.getUri()).stringFile;
+            } else { // cache got expired
+                stringCache.remove(req.getUri());
+            }
+        } else {
+
+            try {
+                content = new String(Files.readAllBytes(Paths.get(pathString)));
+            } catch (NoSuchFileException e) {
+                return FileNotFound();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
         FullHttpResponse res = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.OK,
-                Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
+                Unpooled.copiedBuffer(content, CharsetUtil.UTF_8)
         );
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "application/js");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
-
+        //add to cache
+        stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
         return res;
 
 
     }
 
-    private static HttpResponse imgResponse(HttpRequest req, Router<String> router, String pathString) {
+    private HttpResponse imgResponse(HttpRequest req, Router<String> router, String pathString) {
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
 
         byte[] content = null;
-        try {
-             content = Files.readAllBytes(Paths.get(pathString));
-        } catch (NoSuchFileException e) {
-            return FileNotFound();
-        } catch (IOException e) {
-            e.printStackTrace();
+
+        //check cache
+        if (byteCache.containsKey(req.getUri()) && FILE_MEMORY_CACHING) {
+            if (byteCache.get(req.getUri()).gotInCache > new Date().getTime() - CACHE_EXPIRES_IN_MS) {
+                content = byteCache.get(req.getUri()).byteArray;
+            } else { // cache got expired
+                byteCache.remove(req.getUri());
+            }
+        } else {
+            try {
+                content = Files.readAllBytes(Paths.get(pathString));
+            } catch (NoSuchFileException e) {
+                return FileNotFound();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
 
@@ -181,11 +239,13 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "image/jpg");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+        //add to cache
+        if (FILE_MEMORY_CACHING) byteCache.put(req.getUri(), new cachedByteArray(req.getUri(), content));
 
         return res;
     }
 
-    private static HttpResponse htmlResponse(HttpRequest req, Router<String> router) {
+    private HttpResponse htmlResponse(HttpRequest req, Router<String> router) {
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
         StringBuilder targetFile = new StringBuilder();
@@ -201,14 +261,23 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
 
         String content = null;
-        try {
-            content = new String(Files.readAllBytes(Paths.get(targetFile.toString())));
-        } catch (NoSuchFileException e) {
-            return FileNotFound();
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
 
+        //check cache
+        if (stringCache.containsKey(req.getUri()) && FILE_MEMORY_CACHING) {
+            if (stringCache.get(req.getUri()).gotInCache > new Date().getTime() - CACHE_EXPIRES_IN_MS) {
+                content = stringCache.get(req.getUri()).stringFile;
+            } else { // cache got expired
+                stringCache.remove(req.getUri());
+            }
+        } else {
+            try {
+                content = new String(Files.readAllBytes(Paths.get(targetFile.toString())));
+            } catch (NoSuchFileException e) {
+                return FileNotFound();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
 
         boolean isCharsetUSASCII = req.headers().contains("Accept-Charset", "US-ASCII", true);
 
@@ -221,7 +290,8 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
-
+        //add to cache
+        if (FILE_MEMORY_CACHING) stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
         return res;
     }
 
@@ -342,4 +412,37 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
         } else return "";
 
     }
+
+
+    class cachedByteArray {
+        String uri;
+        byte[] byteArray;
+        long gotInCache;
+
+        public cachedByteArray(String uri, byte[] byteArray) {
+            this.uri = uri;
+            this.byteArray = byteArray;
+            gotInCache = new Date().getTime();
+        }
+    }
+
+    class cachedStringFile {
+        String uri;
+
+        public cachedStringFile(String uri, String stringFile) {
+            this.uri = uri;
+            this.stringFile = stringFile;
+            gotInCache = new Date().getTime();
+        }
+
+        String stringFile;
+        long gotInCache;
+
+
+    }
+//    Can implement contentType as this:
+//    private static void setContentTypeHeader(HttpResponse response, File file) {
+//        MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
+//        response.headers().set(CONTENT_TYPE, mimeTypesMap.getContentType(file.getPath()));
+//    }
 }
