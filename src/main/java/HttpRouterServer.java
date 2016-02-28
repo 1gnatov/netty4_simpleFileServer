@@ -23,25 +23,23 @@ import io.netty.handler.codec.http.router.Router;
 
 
 public class HttpRouterServer {
+
     public static final int PORT = 8000;
-    // ALSO CHANGE PUBLIC_DIR IN HttpRouterServerHandler!
     public static final String PUBLIC_DIR = "public/";
+    public static final boolean FILE_MEMORY_CACHING = true;
+    public static final long MEMORY_CACHE_EXPIRES_IN_MS = 60000L; //60sec
+
+
 
     public static void main(String[] args) throws Exception {
-        // This is an example router, it will be used at HttpRouterServerHandler.
-        //
-        // For simplicity of this example, route targets are just simple strings.
-        // But you can make them classes, and at HttpRouterServerHandler once you
-        // get a target class, you can create an instance of it and dispatch the
-        // request to the instance etc.
         Router<String> router = new Router<String>()
-//            .GET("/",             "Index page")
-//            .GET("/articles/:id", "Article show page")
-            .GET(PUBLIC_DIR+":id", "Custom HTML page")
+            .GET(PUBLIC_DIR+":id", "public")
             .GET("/", "index")
             .GET(PUBLIC_DIR, "index")
 //            .GET("/image", "base64")
 //            .GET("/img", "image")
+//            .GET("/",             "Index page")
+//            .GET("/articles/:id", "Article show page")
             .notFound("404 Not Found");
         System.out.println(router);
 
