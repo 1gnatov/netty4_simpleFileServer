@@ -21,24 +21,28 @@ import io.netty.handler.codec.http.router.RouteResult;
 import io.netty.handler.codec.http.router.Router;
 import io.netty.util.CharsetUtil;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Paths;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 
 @ChannelHandler.Sharable
 public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpRequest> {
 
     public static final String PUBLIC_DIR = "public/";
-    public static final boolean FILE_MEMORY_CACHING = true;
+    public static final boolean FILE_MEMORY_CACHING = false;
     private static final long CACHE_EXPIRES_IN_MS = 60000L; //60sec
-    private final Router<String> router;
-    //TODO here will be CacheMap<>
+    public static final int HTTP_CACHE_SECONDS = 60;
+    public static final String HTTP_DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss zzz";
+    public static final String CUSTOM_DATE_FORMAT = "yyyy MMM dd HH:mm:ss";
+    public static final String HTTP_DATE_GMT_TIMEZONE = "GMT";
 
+    private final Router<String> router;
     public HashMap<String, cachedStringFile> stringCache = new HashMap<String, cachedStringFile>();
     public HashMap<String, cachedByteArray> byteCache = new HashMap<String, cachedByteArray>();
 
@@ -82,7 +86,16 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 //            }
 //        }  else { // if (httpCash.containsKey(req.getUri()))
 
+        /* */
+
+        // URI /public/*
         if (routeResult.target() == "Custom HTML page") {
+
+            // 304 if have header IF_MODIFIED_SINCE and file was not mod, also checking FileNotFound
+            HttpResponse try304 = checkNotModifiedHeaderAndRespond304(req, paramFirst);
+            if (try304 != null) {
+                flushResponse(ctx, req, try304);
+            }
 
             // public/*.jpg *.png
             if (getExtension(paramFirst).equals("jpg") || getExtension(paramFirst).equals("png")) {
@@ -137,9 +150,52 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 //        }
     }
 
+    public HttpResponse checkNotModifiedHeaderAndRespond304 (HttpRequest req, String pathToFile) {
+
+        String ifModifiedSince = req.headers().get(HttpHeaders.Names.IF_MODIFIED_SINCE);
+        String ifNoneMatch = req.headers().get(HttpHeaders.Names.IF_NONE_MATCH);
+
+        File file = new File("public/" + pathToFile);
+        if (file.isHidden() || !file.exists()) {
+            return FileNotFound();
+        }
+
+        Date fileModifDate = new Date(file.lastModified());
+
+        SimpleDateFormat gmtDateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
+        gmtDateFormatter.setTimeZone(TimeZone.getTimeZone(HTTP_DATE_GMT_TIMEZONE));
+        String ifMatchFileLastModifString = gmtDateFormatter.format(fileModifDate);
+
+        String fileEtag = null;
+        try {fileEtag = Base64.getEncoder().encodeToString(ifMatchFileLastModifString.getBytes("utf-8")).toLowerCase();} catch (UnsupportedEncodingException e) {};
+
+        // If-None-Match part
+        if (ifNoneMatch != null && !fileEtag.isEmpty()) {
+            if (ifNoneMatch.equals(fileEtag)) {
+                FullHttpResponse res = new DefaultFullHttpResponse(
+                        HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_MODIFIED, Unpooled.buffer(0)
+                );
+                return res;
+            }
+        }
+
+        // If-Modified-Since part
+        if (ifModifiedSince != null && !ifModifiedSince.isEmpty()) {
+            if (ifMatchFileLastModifString.equals(ifModifiedSince)) {
+                FullHttpResponse res = new DefaultFullHttpResponse(
+                        HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_MODIFIED, Unpooled.buffer(0)
+                );
+                return res;
+            }
+        }
+        return null;
+
+    }
+
     private HttpResponse cssResponse(HttpRequest req, Router<String> router, String pathString) {
 
         String content = null;
+
         //check cache
         if (stringCache.containsKey(req.getUri()) && FILE_MEMORY_CACHING) {
             if (stringCache.get(req.getUri()).gotInCache > new Date().getTime() - CACHE_EXPIRES_IN_MS) {
@@ -163,8 +219,10 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
                 Unpooled.copiedBuffer(content.toString(), CharsetUtil.UTF_8)
         );
 
+        setDateAndCacheHeaders(res, pathString);
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/css");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+
         //add to cache
         if (FILE_MEMORY_CACHING) stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
         return res;
@@ -201,8 +259,9 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "application/js");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+        setDateAndCacheHeaders(res, pathString);
         //add to cache
-        stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
+        if (FILE_MEMORY_CACHING) stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
         return res;
 
 
@@ -239,6 +298,7 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "image/jpg");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+        setDateAndCacheHeaders(res, pathString);
         //add to cache
         if (FILE_MEMORY_CACHING) byteCache.put(req.getUri(), new cachedByteArray(req.getUri(), content));
 
@@ -248,15 +308,15 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
     private HttpResponse htmlResponse(HttpRequest req, Router<String> router) {
 
         RouteResult<String> routeResult = router.route(req.getMethod(), req.getUri());
-        StringBuilder targetFile = new StringBuilder();
-        targetFile.append(PUBLIC_DIR);
+        StringBuilder pathToFileSB = new StringBuilder();
+        pathToFileSB.append(PUBLIC_DIR);
 
         if (routeResult.pathParams().isEmpty()) {
-            targetFile.append("index.html");
+            pathToFileSB.append("index.html");
         } else {
             Map<String, String> paramMap = (Map<String, String>) routeResult.pathParams();
             String paramFirst = paramMap.get("id");
-            targetFile.append(paramFirst);
+            pathToFileSB.append(paramFirst);
         }
 
 
@@ -271,7 +331,7 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
             }
         } else {
             try {
-                content = new String(Files.readAllBytes(Paths.get(targetFile.toString())));
+                content = new String(Files.readAllBytes(Paths.get(pathToFileSB.toString())));
             } catch (NoSuchFileException e) {
                 return FileNotFound();
             } catch (IOException e) {
@@ -290,6 +350,7 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
         res.headers().set(HttpHeaders.Names.CONTENT_TYPE,   "text/html");
         res.headers().set(HttpHeaders.Names.CONTENT_LENGTH, res.content().readableBytes());
+        setDateAndCacheHeaders(res, pathToFileSB.toString());
         //add to cache
         if (FILE_MEMORY_CACHING) stringCache.put(req.getUri(), new cachedStringFile(req.getUri(), content));
         return res;
@@ -413,6 +474,29 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
     }
 
+    private static void setDateAndCacheHeaders(HttpResponse response, String pathToFile) {
+
+        File fileToCache = new File(pathToFile);
+
+        SimpleDateFormat dateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
+        dateFormatter.setTimeZone(TimeZone.getTimeZone(HTTP_DATE_GMT_TIMEZONE));
+
+        // Date header
+        Calendar time = new GregorianCalendar();
+        response.headers().set("Date", dateFormatter.format(time.getTime()));
+
+        // Add cache headers
+        time.add(Calendar.SECOND, HTTP_CACHE_SECONDS);
+        response.headers().set(HttpHeaders.Names.EXPIRES, dateFormatter.format(time.getTime()));
+        response.headers().set(HttpHeaders.Names.CACHE_CONTROL, "private, max-age=" + HTTP_CACHE_SECONDS);
+
+        response.headers().set(HttpHeaders.Names.LAST_MODIFIED, dateFormatter.format(new Date(fileToCache.lastModified())));
+
+        //SimpleDateFormat fileDateFormatter = new SimpleDateFormat(CUSTOM_DATE_FORMAT, Locale.US);
+        String lastModifiedString = dateFormatter.format(new Date(fileToCache.lastModified()));
+        try {response.headers().set(HttpHeaders.Names.ETAG, Base64.getEncoder().encodeToString(lastModifiedString.getBytes("utf-8")).toLowerCase());} catch (UnsupportedEncodingException e) {}
+    }
+
 
     class cachedByteArray {
         String uri;
@@ -440,6 +524,7 @@ public class HttpRouterServerHandler extends SimpleChannelInboundHandler<HttpReq
 
 
     }
+    //TODO contentType <- mimeTypesMap
 //    Can implement contentType as this:
 //    private static void setContentTypeHeader(HttpResponse response, File file) {
 //        MimetypesFileTypeMap mimeTypesMap = new MimetypesFileTypeMap();
